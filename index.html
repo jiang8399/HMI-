@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>贵重物料交接登记台账</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+        body { background-color: #f4f6f9; color: #333; padding: 12px; font-size: 14px; }
+        .container { max-width: 500px; margin: 0 auto; background: #fff; border-radius: 12px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+        
+        .header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+        h2 { color: #1a73e8; font-size: 18px; }
+        .config-btn { background: #e8f0fe; border: 1px solid #1a73e8; color: #1a73e8; padding: 4px 10px; border-radius: 6px; font-size: 12px; cursor: pointer; }
+        
+        /* 操作员卡片 */
+        .operator-card { background: #e8f0fe; border-radius: 8px; padding: 10px 12px; margin-bottom: 14px; font-size: 13px; color: #333; }
+        .operator-card span { font-weight: bold; color: #1a73e8; font-size: 14px; }
+
+        /* 上班交接看板提示框 */
+        .handoff-box { background: #fff8e1; border: 1px solid #ffe0b2; border-radius: 8px; padding: 10px; margin-bottom: 14px; font-size: 13px; color: #e65100; }
+        .handoff-box b { color: #d84315; }
+
+        .form-group { margin-bottom: 12px; }
+        label { display: block; margin-bottom: 4px; font-weight: 500; color: #555; font-size: 13px; }
+        input, select, textarea { width: 100%; padding: 10px; border: 1px solid #dcdcdc; border-radius: 6px; font-size: 15px; background: #fff; }
+        input:focus, select:focus { border-color: #1a73e8; outline: none; box-shadow: 0 0 0 2px rgba(26,115,232,0.15); }
+        
+        .row { display: flex; gap: 10px; }
+        .col { flex: 1; }
+
+        .calc-hint { font-size: 12px; margin-top: 4px; }
+        .success { color: #2e7d32; }
+        .warning { color: #c62828; font-weight: bold; }
+
+        .submit-btn { width: 100%; background: #1a73e8; color: #fff; border: none; padding: 14px; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 16px; }
+        .submit-btn:active { background: #1557b0; }
+
+        /* 弹窗遮罩样式 */
+        .modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 999; }
+        .modal-content { background: #fff; padding: 20px; border-radius: 12px; width: 90%; max-width: 380px; box-shadow: 0 4px 16px rgba(0,0,0,0.2); max-height: 85vh; overflow-y: auto; }
+        .modal-content h3 { margin-bottom: 12px; font-size: 16px; color: #1a73e8; }
+        
+        .list-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #eee; font-size: 13px; }
+        .del-badge { color: #c62828; cursor: pointer; font-weight: bold; padding: 2px 6px; background: #fdecea; border-radius: 4px; }
+        .add-box { display: flex; gap: 6px; margin-top: 10px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header-row">
+        <h2>📋 贵重物料交接登记台账</h2>
+        <button class="config-btn" onclick="verifyAdmin()">⚙️ 管理员后台</button>
+    </div>
+
+    <!-- 操作员身份显示区 -->
+    <div class="operator-card">
+        当前绑定操作员（责任人）：<span id="displayOperator">未绑定</span>
+    </div>
+
+    <!-- 上班交接参考提示 -->
+    <div id="handoffHint" class="handoff-box">
+        💡 <b>交接参考：</b>请先选择产线和物料型号，系统将自动加载上一班的交班剩余数量。
+    </div>
+
+    <form id="materialForm" onsubmit="handleSubmit(event)">
+        <!-- 线体选择 -->
+        <div class="form-group">
+            <label>选择产线线体 *</label>
+            <select id="lineName" onchange="onLineChange()" required>
+                <!-- 动态由JS加载 -->
+            </select>
+        </div>
+
+        <!-- 物料型号下拉选择 -->
+        <div class="form-group">
+            <label>物料型号 / 编号 *</label>
+            <select id="materialModel" onchange="onModelChange()" required>
+                <!-- 动态由JS加载 -->
+            </select>
+        </div>
+
+        <div class="row">
+            <div class="col">
+                <div class="form-group">
+                    <label>登记日期 *(跨天夜班可手动更改)</label>
+                    <input type="date" id="recordDate" required>
+                </div>
+            </div>
+            <div class="col">
+                <div class="form-group">
+                    <label>班次 / 班别 *</label>
+                    <div class="row" style="gap:5px;">
+                        <select id="shift" style="flex:1;">
+                            <option value="白班">白班</option>
+                            <option value="夜班">夜班</option>
+                            <option value="早班">早班</option>
+                            <option value="中班">中班</option>
+                            <option value="晚班">晚班</option>
+                        </select>
+                        <select id="group" style="flex:1;">
+                            <option value="A">A</option>
+                            <option value="B">B</option>
+                            <option value="C">C</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 数量录入：两列网格 -->
+        <div class="row">
+            <div class="col">
+                <div class="form-group">
+                    <label style="color:#d84315;">接班剩余数量 (自动对齐上班交班)</label>
+                    <input type="number" id="startQty" value="0" oninput="calculateBalance()">
+                </div>
+            </div>
+            <div class="col">
+                <div class="form-group">
+                    <label>交班剩余数量</label>
+                    <input type="number" id="endQty" value="0" oninput="calculateBalance()">
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col">
+                <div class="form-group">
+                    <label>本班领用数量</label>
+                    <input type="number" id="takeQty" value="0" oninput="calculateBalance()">
+                </div>
+            </div>
+            <div class="col">
+                <div class="form-group">
+                    <label>到料数量</label>
+                    <input type="number" id="inQty" value="0" oninput="calculateBalance()">
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col">
+                <div class="form-group">
+                    <label>本班消耗数量</label>
+                    <input type="number" id="consumeQty" value="0" oninput="calculateBalance()">
+                </div>
+            </div>
+            <div class="col">
+                <div class="form-group">
+                    <label>Repair领用</label>
+                    <input type="number" id="repairQty" value="0" oninput="calculateBalance()">
+                </div>
+            </div>
+            <div class="col">
+                <div class="form-group">
+                    <label>不良品区域</label>
+                    <input type="number" id="badQty" value="0" oninput="calculateBalance()">
+                </div>
+            </div>
+        </div>
+
+        <!-- 实时账务与领/到料校验提示 -->
+        <div class="form-group">
+            <div id="balanceHint" class="calc-hint success">✅ 账务校验：平账</div>
+            <div id="takeInHint" class="calc-hint success" style="margin-top: 4px;">✅ 领/到料校验：数量一致</div>
+        </div>
+
+        <!-- 异常备注 -->
+        <div class="form-group">
+            <label id="noteLabel">异常原因备注 (选填)</label>
+            <textarea id="note" rows="2" placeholder="如有账目不平或其他异常请在此简要备注"></textarea>
+        </div>
+
+        <button type="submit" class="submit-btn">立即提交并记录</button>
+    </form>
+</div>
+
+<!-- 首次登录绑定姓名弹窗 -->
+<div id="operatorModal" class="modal" style="display:none;">
+    <div class="modal-content">
+        <h3>👤 首次使用身份绑定</h3>
+        <p style="font-size: 13px; color: #555; margin: 8px 0 12px 0;">为了落实责任追溯，请输入您的真实姓名或工号（绑定后将永久锁定）：</p>
+        <input type="text" id="modalOperatorInput" placeholder="例如：张三 / 10086">
+        <button class="submit-btn" style="margin-top: 15px; padding: 10px;" onclick="saveOperatorFromModal()">确认绑定并开始</button>
+    </div>
+</div>
+
+<!-- 管理员密码验证弹窗 -->
+<div id="adminLoginModal" class="modal" style="display:none;">
+    <div class="modal-content">
+        <h3>🔐 管理员权限验证</h3>
+        <p style="font-size: 13px; color: #555; margin: 8px 0 12px 0;">请输入管理员密码以进入产线与物料维护后台：</p>
+        <input type="password" id="adminPasswordInput" placeholder="默认密码: 8888">
+        <div class="row" style="margin-top: 15px; gap: 10px;">
+            <button onclick="document.getElementById('adminLoginModal').style.display='none'" style="flex:1; padding: 10px; background:#ddd; border:none; border-radius:6px; cursor:pointer;">取消</button>
+            <button onclick="checkAdminPassword()" style="flex:1; padding: 10px; background:#1a73e8; color:#fff; border:none; border-radius:6px; cursor:pointer;">验证登录</button>
+        </div>
+    </div>
+</div>
+
+<!-- 产线与物料维护管理弹窗 -->
+<div id="configModal" class="modal" style="display:none;">
+    <div class="modal-content">
+        <h3>⚙️ 产线与物料维护后台</h3>
+        
+        <!-- 产线管理区 -->
+        <div style="margin-bottom: 15px;">
+            <label style="font-weight: bold; margin-bottom: 6px;">产线线体列表：</label>
+            <div id="lineConfigList" style="max-height: 120px; overflow-y: auto; border: 1px solid #ddd; border-radius: 6px; padding: 6px; background: #fafafa;"></div>
+            <div class="add-box">
+                <input type="text" id="newLineInput" placeholder="输入新产线名称">
+                <button onclick="addLine()" style="background: #1a73e8; color: #fff; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer;">添加</button>
+            </div>
+        </div>
+
+        <!-- 物料管理区 -->
+        <div style="margin-bottom: 15px;">
+            <label style="font-weight: bold; margin-bottom: 6px;">当前选中产线的物料列表：</label>
+            <select id="configLineSelect" onchange="renderMaterialConfigList()" style="margin-bottom: 6px;"></select>
+            <div id="materialConfigList" style="max-height: 140px; overflow-y: auto; border: 1px solid #ddd; border-radius: 6px; padding: 6px; background: #fafafa;"></div>
+            <div class="add-box">
+                <input type="text" id="newMaterialInput" placeholder="输入新物料型号/编号">
+                <button onclick="addMaterial()" style="background: #1a73e8; color: #fff; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer;">添加</button>
+            </div>
+        </div>
+
+        <button onclick="closeConfigModal()" class="submit-btn" style="margin-top: 10px; padding: 10px;">保存并退出后台</button>
+    </div>
+</div>
+
+<script>
+    const ADMIN_PASSWORD = "8888";
+
+    const defaultLineMaterials = {
+        "Smart V5": ["SVT-FRONT-01 (Smart前盖A款)", "SVT-FRONT-02 (Smart前盖B款)"],
+        "BR": ["BR-LENS-01 (BR高精光学镜片)"],
+        "basic 手动线": ["BSC-BASE-01 (手动线基础底座)"],
+        "UBP": ["UBP-MOD-01 (UBP射频模组)"],
+        "UCP": ["UCP-PANEL-01 (UCP触控面板)"],
+        "CP": ["CP-CPU-01 (CP核心计算单元)"],
+        "IFP": ["IFP-FILT-01 (IFP精密滤光片)"],
+        "Manual Line": ["MAN-GEN-01 (通用贵重夹具A)"]
+    };
+
+    function getLineMaterials() {
+        let data = localStorage.getItem('precious_material_line_materials');
+        return data ? JSON.parse(data) : defaultLineMaterials;
+    }
+
+    function saveLineMaterials(lm) {
+        localStorage.setItem('precious_material_line_materials', JSON.stringify(lm));
+    }
+
+    function getHistoryDB() {
+        let db = localStorage.getItem('precious_material_history_db');
+        return db ? JSON.parse(db) : {};
+    }
+
+    window.onload = function() {
+        const today = new Date().toISOString().substring(0, 10);
+        document.getElementById('recordDate').value = today;
+
+        let savedOp = localStorage.getItem('precious_material_operator');
+        if (!savedOp || savedOp.trim() === '' || savedOp === '未绑定') {
+            document.getElementById('operatorModal').style.display = 'flex';
+        } else {
+            document.getElementById('displayOperator').innerText = savedOp;
+        }
+
+        initLineSelect();
+    };
+
+    function saveOperatorFromModal() {
+        let val = document.getElementById('modalOperatorInput').value.trim();
+        if (!val) {
+            alert('姓名/工号不能为空！');
+            return;
+        }
+        localStorage.setItem('precious_material_operator', val);
+        document.getElementById('displayOperator').innerText = val;
+        document.getElementById('operatorModal').style.display = 'none';
+    }
+
+    function initLineSelect() {
+        let lm = getLineMaterials();
+        let lineSelect = document.getElementById('lineName');
+        let currentVal = lineSelect.value;
+        lineSelect.innerHTML = "";
+
+        let lines = Object.keys(lm);
+        if (lines.length === 0) {
+            lineSelect.add(new Option("-- 请先添加产线 --", ""));
+        } else {
+            lines.forEach(ln => {
+                lineSelect.add(new Option(ln, ln));
+            });
+            if (lines.includes(currentVal)) {
+                lineSelect.value = currentVal;
+            }
+        }
+        updateMaterialOptions();
+    }
+
+    function onLineChange() {
+        updateMaterialOptions();
+    }
+
+    function updateMaterialOptions() {
+        let lm = getLineMaterials();
+        let line = document.getElementById('lineName').value;
+        let modelSelect = document.getElementById('materialModel');
+        modelSelect.innerHTML = "";
+
+        let materials = lm[line] || [];
+        if (materials.length === 0) {
+            modelSelect.add(new Option("-- 该产线暂无物料 --", ""));
+        } else {
+            materials.forEach(mat => {
+                modelSelect.add(new Option(mat, mat));
+            });
+        }
+        onModelChange();
+    }
+
+    function onModelChange() {
+        let line = document.getElementById('lineName').value;
+        let model = document.getElementById('materialModel').value;
+        let hintBox = document.getElementById('handoffHint');
+        
+        if (!model) {
+            hintBox.innerHTML = `💡 <b>交接参考：</b>当前产线【${line}】，请选择物料型号。`;
+            return;
+        }
+
+        let db = getHistoryDB();
+        let key = line + "_" + model;
+        let lastRecord = db[key];
+
+        // 修复：严谨判断 lastRecord 是否存在及 endQty 是否有效
+        if (lastRecord && typeof lastRecord === 'object' && lastRecord.endQty !== undefined) {
+            document.getElementById('startQty').value = lastRecord.endQty;
+            hintBox.innerHTML = `✅ <b>交接参考：</b>已自动载入上一班（<b>${lastRecord.operator || '未知'}</b> 于 ${lastRecord.time || '刚才'} 提交）的交班剩余数量：<b>${lastRecord.endQty}</b> 件。`;
+        } else if (typeof lastRecord === 'number') {
+            // 兼容极少数旧格式数据
+            document.getElementById('startQty').value = lastRecord;
+            hintBox.innerHTML = `✅ <b>交接参考：</b>已自动载入上一班交班剩余数量：<b>${lastRecord}</b> 件。`;
+        } else {
+            document.getElementById('startQty').value = 0;
+            hintBox.innerHTML = `⚠️ <b>交接参考：</b>【${line} - ${model}】暂无上一班交接记录，接班剩余已设为 0。`;
+        }
+        calculateBalance();
+    }
+
+    // 实时账务与领/到料校验逻辑
+    function calculateBalance() {
+        let start = parseInt(document.getElementById('startQty').value) || 0;
+        let take = parseInt(document.getElementById('takeQty').value) || 0;
+        let in_q = parseInt(document.getElementById('inQty').value) || 0;
+        let consume = parseInt(document.getElementById('consumeQty').value) || 0;
+        let repair = parseInt(document.getElementById('repairQty').value) || 0;
+        let bad = parseInt(document.getElementById('badQty').value) || 0;
+        let end = parseInt(document.getElementById('endQty').value) || 0;
+
+        let calcEnd = start + in_q - consume - repair - bad;
+        let balanceHint = document.getElementById('balanceHint');
+        let takeInHint = document.getElementById('takeInHint');
+        let noteLabel = document.getElementById('noteLabel');
+
+        let isBalanceError = (calcEnd !== end);
+        let isTakeInDiff = (take !== in_q);
+
+        // 1. 账务校验提示
+        if (!isBalanceError) {
+            balanceHint.className = "calc-hint success";
+            balanceHint.innerText = "✅ 账务校验：平账（理论计算值与交班剩余一致）";
+        } else {
+            balanceHint.className = "calc-hint warning";
+            balanceHint.innerText = `⚠️ 账目不平！理论计算剩余应为 ${calcEnd}，当前登记 ${end}（差值: ${calcEnd - end}）`;
+        }
+
+        // 2. 领/到料数量核对提示
+        if (!isTakeInDiff) {
+            takeInHint.className = "calc-hint success";
+            takeInHint.innerText = "✅ 领/到料校验：本班领用数量与到料数量一致";
+        } else {
+            takeInHint.className = "calc-hint warning";
+            takeInHint.innerText = `⚠️ 注意：本班领用数量 (${take}) 与到料数量 (${in_q}) 不一致！`;
+        }
+
+        // 3. 如果有异常，强制备注样式提醒
+        if (isBalanceError || isTakeInDiff) {
+            noteLabel.innerHTML = `异常原因备注 <span style="color:#c62828; font-weight:bold;">* (检测到异常，必须填写原因)</span>`;
+            document.getElementById('note').style.borderColor = "#c62828";
+        } else {
+            noteLabel.innerHTML = `异常原因备注 (选填)`;
+            document.getElementById('note').style.borderColor = "#dcdcdc";
+        }
+    }
+
+    function handleSubmit(e) {
+        e.preventDefault();
+        let operator = localStorage.getItem('precious_material_operator');
+        if (!operator || operator === '未绑定') {
+            document.getElementById('operatorModal').style.display = 'flex';
+            return;
+        }
+
+        let start = parseInt(document.getElementById('startQty').value) || 0;
+        let take = parseInt(document.getElementById('takeQty').value) || 0;
+        let in_q = parseInt(document.getElementById('inQty').value) || 0;
+        let consume = parseInt(document.getElementById('consumeQty').value) || 0;
+        let repair = parseInt(document.getElementById('repairQty').value) || 0;
+        let bad = parseInt(document.getElementById('badQty').value) || 0;
+        let end = parseInt(document.getElementById('endQty').value) || 0;
+        let note = document.getElementById('note').value.trim();
+
+        let calcEnd = start + in_q - consume - repair - bad;
+        let isBalanceError = (calcEnd !== end);
+        let isTakeInDiff = (take !== in_q);
+
+        // 强制校验：账不平 或 领到料不一致 时，必须填写备注
+        if ((isBalanceError || isTakeInDiff) && !note) {
+            alert('提交失败 ❌\n检测到账目不平或领/到料数量不一致，必须在【异常原因备注】中填写具体原因后方可提交！');
+            document.getElementById('note').focus();
+            return;
+        }
+
+        let line = document.getElementById('lineName').value;
+        let model = document.getElementById('materialModel').value;
+        let recordDate = document.getElementById('recordDate').value;
+        let shiftVal = document.getElementById('shift').value + " " + document.getElementById('group').value;
+
+        let now = new Date();
+        let timeStr = now.getFullYear() + '-' + 
+                      String(now.getMonth()+1).padStart(2, '0') + '-' + 
+                      String(now.getDate()).padStart(2, '0') + ' ' + 
+                      String(now.getHours()).padStart(2, '0') + ':' + 
+                      String(now.getMinutes()).padStart(2, '0');
+
+        // 1. 更新上一班交接记录
+        let db = getHistoryDB();
+        let key = line + "_" + model;
+        db[key] = {
+            endQty: end,
+            operator: operator,
+            time: timeStr
+        };
+        localStorage.setItem('precious_material_history_db', JSON.stringify(db));
+
+        // 2. 同步日志供电脑端 admin.html 读取
+        let logs = JSON.parse(localStorage.getItem('precious_material_submit_logs') || '[]');
+        logs.push({
+            time: timeStr,
+            date: recordDate,
+            shift: shiftVal,
+            operator: operator,
+            line: line,
+            model: model,
+            startQty: start,
+            inQty: in_q,
+            consumeQty: consume,
+            repairQty: repair,
+            badQty: bad,
+            endQty: end,
+            note: note || '-'
+        });
+        localStorage.setItem('precious_material_submit_logs', JSON.stringify(logs));
+
+        alert(`提交成功 ✅\n责任人: ${operator}\n产线: ${line}\n交班剩余: ${end}\n\n已成功归档并同步至电脑端！`);
+        
+        // 重置表单
+        document.getElementById('endQty').value = '0';
+        document.getElementById('takeQty').value = '0';
+        document.getElementById('inQty').value = '0';
+        document.getElementById('consumeQty').value = '0';
+        document.getElementById('repairQty').value = '0';
+        document.getElementById('badQty').value = '0';
+        document.getElementById('note').value = '';
+        document.getElementById('note').style.borderColor = "#dcdcdc";
+
+        onModelChange();
+    }
+
+    // ================= 管理员密码校验逻辑 =================
+    function verifyAdmin() {
+        document.getElementById('adminPasswordInput').value = '';
+        document.getElementById('adminLoginModal').style.display = 'flex';
+    }
+
+    function checkAdminPassword() {
+        let pwd = document.getElementById('adminPasswordInput').value.trim();
+        if (pwd === ADMIN_PASSWORD) {
+            document.getElementById('adminLoginModal').style.display = 'none';
+            openConfigModal();
+        } else {
+            alert('管理员密码错误！');
+        }
+    }
+
+    function openConfigModal() {
+        renderLineConfigList();
+        renderConfigLineSelect();
+        document.getElementById('configModal').style.display = 'flex';
+    }
+
+    function closeConfigModal() {
+        document.getElementById('configModal').style.display = 'none';
+        initLineSelect();
+    }
+
+    function renderLineConfigList() {
+        let lm = getLineMaterials();
+        let container = document.getElementById('lineConfigList');
+        container.innerHTML = "";
+        Object.keys(lm).forEach(ln => {
+            let div = document.createElement('div');
+            div.className = "list-item";
+            div.innerHTML = `<span>${ln}</span> <span class="del-badge" onclick="deleteLine('${ln}')">删除</span>`;
+            container.appendChild(div);
+        });
+    }
+
+    function addLine() {
+        let name = document.getElementById('newLineInput').value.trim();
+        if (!name) return alert('产线名称不能为空！');
+        let lm = getLineMaterials();
+        if (lm[name]) return alert('该产线已存在！');
+        lm[name] = [];
+        saveLineMaterials(lm);
+        document.getElementById('newLineInput').value = '';
+        renderLineConfigList();
+        renderConfigLineSelect();
+    }
+
+    function deleteLine(ln) {
+        if (!confirm(`确定要删除产线【${ln}】吗？`)) return;
+        let lm = getLineMaterials();
+        delete lm[ln];
+        saveLineMaterials(lm);
+        renderLineConfigList();
+        renderConfigLineSelect();
+    }
+
+    function renderConfigLineSelect() {
+        let lm = getLineMaterials();
+        let sel = document.getElementById('configLineSelect');
+        let current = sel.value;
+        sel.innerHTML = "";
+        Object.keys(lm).forEach(ln => {
+            sel.add(new Option(ln, ln));
+        });
+        if (Object.keys(lm).includes(current)) sel.value = current;
+        renderMaterialConfigList();
+    }
+
+    function renderMaterialConfigList() {
+        let lm = getLineMaterials();
+        let line = document.getElementById('configLineSelect').value;
+        let container = document.getElementById('materialConfigList');
+        container.innerHTML = "";
+        let mats = lm[line] || [];
+        if (mats.length === 0) {
+            container.innerHTML = `<div style="color:#888; font-size:12px; padding:4px;">该产线暂无物料</div>`;
+            return;
+        }
+        mats.forEach((mat, idx) => {
+            let div = document.createElement('div');
+            div.className = "list-item";
+            div.innerHTML = `<span>${mat}</span> <span class="del-badge" onclick="deleteMaterial('${line}', ${idx})">删除</span>`;
+            container.appendChild(div);
+        });
+    }
+
+    function addMaterial() {
+        let lineSel = document.getElementById('configLineSelect');
+        let selectedLine = lineSel ? lineSel.value : '';
+        let matName = document.getElementById('newMaterialInput').value.trim();
+        if (!selectedLine) return alert('请先选择产线！');
+        if (!matName) return alert('物料型号不能为空！');
+        let lm = getLineMaterials();
+        if (!lm[selectedLine]) lm[selectedLine] = [];
+        if (lm[selectedLine].includes(matName)) return alert('该物料已存在！');
+        lm[selectedLine].push(matName);
+        saveLineMaterials(lm);
+        document.getElementById('newMaterialInput').value = '';
+        renderMaterialConfigList();
+    }
+
+    function deleteMaterial(line, idx) {
+        if (!confirm('确定要删除该物料吗？')) return;
+        let lm = getLineMaterials();
+        lm[line].splice(idx, 1);
+        saveLineMaterials(lm);
+        renderMaterialConfigList();
+    }
+</script>
+
+</body>
+</html>
